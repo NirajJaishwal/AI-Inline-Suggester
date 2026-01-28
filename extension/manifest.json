@@ -1,0 +1,19 @@
+{
+  "manifest_version": 3,
+  "name": "Inline AI",
+  "version": "0.1.0",
+
+  "background": {
+    "service_worker": "src/background/serviceWorker.js",
+    "type": "module"
+  },
+
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["dist/contentScript.js"]
+    }
+  ],
+
+  "permissions": ["activeTab"]
+}
