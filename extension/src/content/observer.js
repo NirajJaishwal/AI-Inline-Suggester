@@ -17,9 +17,17 @@
 
 import { attachInputTracker } from "./inputTracker.js";
 
+const trackedEditables = new WeakSet();
 export function initObserver(onSentenceDetected) {
+  let scheduled = false;
     const observer = new MutationObserver(() => {
+      if (scheduled) return;
+      scheduled = true;
+
+      requestAnimationFrame(() => {
         scanforEditableElements(onSentenceDetected);
+        scheduled = false;
+      });
     });
 
     observer.observe(document.body, {
@@ -32,24 +40,11 @@ export function initObserver(onSentenceDetected) {
 
 
 function scanforEditableElements(onSentenceDetected) {
-    let activeEditable = null;
   document
     .querySelectorAll('textarea, [contenteditable="true"]')
     .forEach((el) => {
-      if (!el.inlineAiAttached) {
-        el.inlineAiAttached = true;
-
-        el.addEventListener("focus", () => {
-          activeEditable = el;
-        });
-
-        el.addEventListener("blur", () => {
-          if (activeEditable === el) {
-            activeEditable = null;
-          }
-        });
-
-        attachInputTracker(el, onSentenceDetected);
-      }
+      if (trackedEditables.has(el)) return;
+      trackedEditables.add(el);
+      attachInputTracker(el, onSentenceDetected);
     });
 }

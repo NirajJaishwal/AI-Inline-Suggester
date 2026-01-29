@@ -15,21 +15,26 @@
 
 // You can’t do sentence-level AI without understanding where the user is typing.
 
-import { handleSentenceDetection } from "./sentenceDetector.js";
+import { handleTextIntent } from "./sentenceDetector.js";
+import { removeGhost } from "./suggestionUI.js";
+import {state} from "./contentScript.js";
+
 
 export function attachInputTracker(el, onSentenceDetected) {
   let typingTimer = null;
 
   el.addEventListener("input", () => {
     if (document.activeElement !== el) return;
+
+    state.isUserTyping = true;
+    removeGhost();
     clearTimeout(typingTimer);
-
     typingTimer = setTimeout(() => {
-      const sentence = handleSentenceDetection(el);
-
-      if (sentence) {
-        // 🔥 HERE is where it is finally used
-        onSentenceDetected(sentence, el);
+      state.isUserTyping = false;
+      if (state.isRenderingGhost) return;
+      const intent = handleTextIntent(el);
+      if (intent) {
+        onSentenceDetected(intent, el);
       }
     }, 700);
   });
