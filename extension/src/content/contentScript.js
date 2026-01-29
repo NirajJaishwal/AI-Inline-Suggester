@@ -52,17 +52,11 @@ export const state = {
 //   });
 // }
 
-function handleSentence(intent, el) {
+export function handleSentence(intent, el) {
   if (state.isUserTyping || state.isRenderingGhost) return;
 
   // 🔥 DEDUPLICATION KEY
   const intentKey = intent.type + "::" + intent.payload.slice(0, 200);
-  // const intentKey =
-  // intent.type +
-  // "::" +
-  // intent.payload.slice(0, 200) +
-  // "::" +
-  // Date.now();
 
   if (intentKey === state.lastIntentKey) return;
 

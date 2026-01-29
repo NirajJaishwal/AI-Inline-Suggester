@@ -1,6 +1,6 @@
 (() => {
   // src/content/sentenceDetector.js
-  function handleTextIntent2(el) {
+  function handleTextIntent(el) {
     const selection = getActiveSelection(el);
     if (selection) {
       return {
@@ -203,7 +203,7 @@
       typingTimer = setTimeout(() => {
         state.isUserTyping = false;
         if (state.isRenderingGhost) return;
-        const intent = handleTextIntent2(el);
+        const intent = handleTextIntent(el);
         if (intent) {
           onSentenceDetected(intent, el);
         }
@@ -243,7 +243,7 @@
     lastIntentKey: "",
     isRenderingGhost: false
   };
-  function handleSentence2(intent, el) {
+  function handleSentence(intent, el) {
     if (state.isUserTyping || state.isRenderingGhost) return;
     const intentKey = intent.type + "::" + intent.payload.slice(0, 200);
     if (intentKey === state.lastIntentKey) return;
@@ -261,7 +261,7 @@
     });
   }
   try {
-    initObserver(handleSentence2);
+    initObserver(handleSentence);
     console.log("[Inline-AI] Content script initialized");
   } catch (error) {
     console.error("[Inline-AI] Failed to initialize:", error);

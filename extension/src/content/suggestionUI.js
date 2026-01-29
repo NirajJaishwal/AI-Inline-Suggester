@@ -17,6 +17,8 @@
 
 // Dummy implementation for now
 import { state } from "./contentScript";
+import { handleTextIntent as handleTextIntent2 } from "./sentenceDetector.js";
+import { handleSentence as handleSentence2 } from "./contentScript.js";
 
 export function getDummySuggestion(intent) {
     if (intent.type === "selection") {
@@ -154,15 +156,15 @@ export function acceptGhost(el) {
 //   removeGhost();
 // });
 
-// Show ghost on selection change if applicable
 document.addEventListener("selectionchange", () => {
   const el = document.activeElement;
   if (!el) return;
+
   if (state.isUserTyping || state.isRenderingGhost) return;
 
-  const intent = handleTextIntent(el);
+  const intent = handleTextIntent2(el);
   if (intent && intent.type === "selection") {
-    handleSentence(intent, el);
+    handleSentence2(intent, el);
   }
 });
 

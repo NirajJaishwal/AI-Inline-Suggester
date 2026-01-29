@@ -14,7 +14,6 @@
 // This is the brainstem of your extension.
 
 export function handleTextIntent(el) {
-
   const selection = getActiveSelection(el);
   if (selection) {
     return {
