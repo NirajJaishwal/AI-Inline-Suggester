@@ -1,6 +1,8 @@
+import { editorSelector, resolveEditorAdapter } from "./editors/index.js";
+import { invalidateOwner } from "./suggestionSession.js";
 import { attachInputTracker } from "./inputTracker.js";
 
-// P0.1.1: discover native textareas only; retain teardown for every attached tracker.
+// Discover canonical editing hosts; each host owns its trackers and revision observer.
 export function initObserver(onSentenceDetected) {
   const tracked = new Map();
   let stopped = false;
@@ -9,10 +11,15 @@ export function initObserver(onSentenceDetected) {
   const scan = () => {
     if (stopped) return;
     for (const [el, cleanup] of tracked) {
-      if (!el.isConnected) { cleanup(); tracked.delete(el); }
+      if (!el.isConnected || resolveEditorAdapter(el)?.resolveOwner(el) !== el) { cleanup(); tracked.delete(el); }
     }
-    document.querySelectorAll("textarea").forEach(el => {
-      if (!tracked.has(el)) tracked.set(el, attachInputTracker(el, onSentenceDetected));
+    document.querySelectorAll(editorSelector).forEach(candidate => {
+      const adapter = resolveEditorAdapter(candidate);
+      const el = adapter?.resolveOwner(candidate);
+      if (!el || tracked.has(el)) return;
+      const stopInput = attachInputTracker(el, onSentenceDetected);
+      const stopRevision = adapter.observe?.(el, () => invalidateOwner(el));
+      tracked.set(el, () => { stopInput?.(); stopRevision?.(); invalidateOwner(el); });
     });
   };
   const observer = new MutationObserver(() => {
@@ -23,7 +30,7 @@ export function initObserver(onSentenceDetected) {
       scan();
     });
   });
-  observer.observe(document.body, { childList: true, subtree: true });
+  observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["contenteditable"] });
   scan();
   return () => {
     if (stopped) return;

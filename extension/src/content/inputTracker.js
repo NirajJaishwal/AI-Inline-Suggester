@@ -1,8 +1,9 @@
+import { resolveEditorAdapter, resolveEditorOwner } from "./editors/index.js";
 import { handleTextIntent } from "./sentenceDetector.js";
-import { isEligibleTextarea } from "./suggestionSession.js";
+import { isEligibleEditor } from "./suggestionSession.js";
 
 export function attachInputTracker(el, onSentenceDetected) {
-  if (el.tagName !== "TEXTAREA") return;
+  if (!resolveEditorAdapter(el)) return;
   let typingTimer = null;
   const cancelTimer = () => {
     clearTimeout(typingTimer);
@@ -11,11 +12,12 @@ export function attachInputTracker(el, onSentenceDetected) {
   el.addEventListener("focusout", cancelTimer);
   el.addEventListener("compositionstart", cancelTimer);
   const onInput = (event) => {
+    if (resolveEditorOwner(event.target) !== el) return;
     cancelTimer();
-    if (event.isComposing || !isEligibleTextarea(el)) return;
+    if (event.isComposing || !isEligibleEditor(el)) return;
     typingTimer = setTimeout(() => {
       typingTimer = null;
-      if (!isEligibleTextarea(el)) return;
+      if (!isEligibleEditor(el)) return;
       const intent = handleTextIntent(el);
       if (intent) onSentenceDetected(intent, el);
     }, 700);

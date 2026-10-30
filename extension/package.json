@@ -6,6 +6,7 @@
   "main": "index.js",
   "scripts": {
   "test": "node --test tests/*.test.mjs",
+  "playground": "node tests/playground/server.mjs",
   "build:content": "esbuild src/content/contentScript.js --bundle --format=iife --platform=browser --outfile=dist/contentScript.js",
   "build:bg": "esbuild src/background/serviceWorker.js --bundle --format=esm --platform=browser --outfile=dist/serviceWorker.js",
   "build": "npm run build:content && npm run build:bg",

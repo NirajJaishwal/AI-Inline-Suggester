@@ -1,19 +1,21 @@
-// P0.1.1: only native textareas may own suggestions.
+// A3: textareas retain acceptance; contenteditable is preview-only.
+import { resolveEditorAdapter, resolveEditorOwner } from "./editors/index.js";
 import { initObserver } from "./observer.js";
 import { handleTextIntent } from "./sentenceDetector.js";
 import { showGhost, initSuggestionUI } from "./suggestionUI.js";
-import { beginSession, getCurrentSession, isEligibleTextarea, isSessionValid, invalidateSession, initSuggestionSessions } from "./suggestionSession.js";
+import { beginSession, getCurrentSession, isEligibleEditor, isSessionValid, invalidateSession, initSuggestionSessions } from "./suggestionSession.js";
 import { getDummySuggestion, normalizeSuggestionRequest, SUGGESTION_MESSAGE } from "../shared/suggestionRequest.js";
 
 export async function handleSentence(intent, el) {
-  if (!intent || !isEligibleTextarea(el)) return;
+  el = resolveEditorOwner(el);
+  if (!intent || !isEligibleEditor(el)) return;
   const active = getCurrentSession();
-  if (isSessionValid(active) && active.owner === el &&
-      active.intent.type === intent.type && active.intent.payload === intent.payload) return;
+  if (isSessionValid(active) && active.snapshot.owner === el &&
+      active.snapshot.intent.type === intent.type && active.snapshot.intent.payload === intent.payload) return;
   const request = normalizeSuggestionRequest(intent, {
     url: location.href,
     host: location.host,
-    editableKind: "textarea",
+    editableKind: resolveEditorAdapter(el).kind,
   });
   if (!request) return;
   const session = beginSession(el, intent);
@@ -44,8 +46,8 @@ async function requestSuggestion(request) {
 }
 
 function handleSelectionChange() {
-  const el = document.activeElement;
-  if (!isEligibleTextarea(el)) return;
+  const el = resolveEditorOwner(document.activeElement);
+  if (!isEligibleEditor(el)) return;
   const intent = handleTextIntent(el);
   if (intent?.type === "selection") handleSentence(intent, el);
 }

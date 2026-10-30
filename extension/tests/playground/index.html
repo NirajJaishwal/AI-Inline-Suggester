@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Inline AI · Editor compatibility playground</title><link rel="stylesheet" href="/playground.css"></head>
+<body><header><p class="eyebrow">P0.2A / A2 · Local diagnostics</p><h1>Editor compatibility playground</h1>
+<p>Use disposable text only. Diagnostics never collect field contents, call AI, insert suggestions, or change production support.</p>
+<p>The installed extension operates independently: textareas accept its mock suggestions; eligible contenteditables show previews only. Input diagnostics do not enable input support.</p></header>
+<main><div id="fixtures">
+<section><h2>Native controls</h2><p>Textareas test the installed extension. Other fields test read-only capability diagnostics.</p>
+<div class="grid"><label>Textarea A<textarea id="textarea-a" rows="4">Please review this draft before our meeting.</textarea></label>
+<label>Textarea B · multiline<textarea id="textarea-b" rows="4">First paragraph.
+Second paragraph with really very useful details.
+Final paragraph for selection testing.</textarea></label>
+<label>Text input<input id="input-text" type="text" value="Disposable text input"></label>
+<label>Search input<input id="input-search" type="search" value="Sample search phrase"></label>
+<label>URL · excluded<input id="input-url" type="url" value="https://example.test/"></label>
+<label>Telephone · excluded<input id="input-tel" type="tel" placeholder="Use fake numbers only"></label>
+<label>Email · unsupported selection<input id="input-email" type="email" placeholder="example@example.test"></label>
+<label>Number · unsupported<input id="input-number" type="number" value="42"></label>
+<label>Password · excluded<input id="input-password" type="password" autocomplete="new-password" placeholder="Do not enter credentials"></label>
+<label>One-time-code · excluded<input id="input-otp" type="text" autocomplete="one-time-code" placeholder="Do not enter real codes"></label>
+<label>Payment · excluded<input id="input-payment" type="text" autocomplete="cc-number" placeholder="No real card data"></label>
+<label>Readonly<input id="input-readonly" readonly value="Readonly fixture"></label>
+<label>Disabled<input id="input-disabled" disabled value="Disabled fixture"></label></div></section>
+<section><h2>Editable DOM · fixtures only</h2><p>A3 previews may appear with the rebuilt extension. Tab cannot accept contenteditable previews; Escape dismisses them. No rich-editor insertion is enabled.</p>
+<label id="plain-label">Plain contenteditable</label><div id="editable-plain" role="textbox" aria-multiline="true" aria-labelledby="plain-label" contenteditable="true">Plain editable text for manual testing.</div>
+<label id="nested-label">Nested / inherited editability</label><div id="editable-nested" role="textbox" aria-multiline="true" aria-labelledby="nested-label" contenteditable="true"><p>Outer paragraph with <strong>bold text</strong> and <span>inherited editable text</span>.</p><p><span contenteditable="false">Protected island <span id="editable-inner" contenteditable="true" role="textbox" aria-label="Re-enabled nested editor">Nested re-enabled editor</span></span></p><p>Last paragraph for cross-boundary selections.</p></div>
+</section><section><h2>Dynamic editors</h2><p>Create, remove or remount a textarea to check stale ownership.</p><div class="actions"><button id="add-editor">Add textarea</button><button id="remove-editor">Remove latest</button><button id="remount-editor">Remount latest</button></div><div id="dynamic-editors"></div></section>
+<section><h2>Scrolling and caret positioning</h2><p>Use the textarea scrollbar, nested panel scrollbar and page scrollbar independently.</p><div class="scroll-panel"><div class="spacer">Scroll this panel</div><label>Scrollable textarea<textarea id="textarea-scroll" rows="4">Line 1 with sample writing.
+Line 2 with more writing.
+Line 3.
+Line 4.
+Line 5.
+Line 6.
+Line 7.
+Line 8.
+Line 9.
+Line 10.</textarea></label><div class="spacer"></div></div></section>
+</div><aside aria-label="Diagnostics"><h2>Native-control diagnostics</h2><p><a href="/browser-tests.html">Run A3 browser regression checks</a></p><p>Focus a fixture, then use the controls below. No text or typed characters are logged.</p><pre id="diagnostic">Focus a fixture to inspect its capabilities.</pre>
+<div class="actions"><button id="capture">Capture diagnostic request</button><button id="mutate">Mutate selected fixture</button><button id="compose-start">Simulate composition start</button><button id="compose-end">Simulate composition end</button></div>
+<p>Request check runs after 3 seconds. Mutate during that delay to invalidate it. This is a metadata-only test, not the extension's runtime request.</p><output id="request-status" aria-live="polite">No diagnostic request.</output>
+<p>Composition buttons produce untrusted events. Test an actual OS IME separately. Undo/redo must be checked with native keyboard actions.</p><h3>Recent events · maximum 60</h3><button id="clear-log">Clear event log</button><pre id="events" aria-label="Event metadata"></pre></aside></main>
+<footer>A3: contenteditable previews only. Frames, shadow roots and framework insertion remain future milestones.</footer><script type="module" src="/playground.js"></script></body></html>

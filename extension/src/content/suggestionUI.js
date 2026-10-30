@@ -1,3 +1,4 @@
+import { resolveEditorOwner } from "./editors/index.js";
 import { isSessionValid, markVisible, finishSession, onSessionEnd } from "./suggestionSession.js";
 
 // One preview record; its session is the only source of editor/target ownership.
@@ -8,7 +9,7 @@ export function hasGhost() { return Boolean(preview); }
 
 function clearPreview() {
   if (!preview) return;
-  preview.session.owner.removeEventListener("scroll", updateGhostPosition);
+  preview.session.snapshot.owner.removeEventListener("scroll", updateGhostPosition);
   preview.element.remove();
   preview = null;
 }
@@ -28,13 +29,14 @@ export function showGhost(session, suggestion) {
   element.setAttribute("aria-hidden", "true");
   Object.assign(element.style, {
     position: "absolute", opacity: "0.4", pointerEvents: "none",
-    font: getComputedStyle(session.owner).font, whiteSpace: "pre", zIndex: "2147483647",
+    font: getComputedStyle(session.snapshot.owner).font, whiteSpace: "pre", zIndex: "2147483647",
   });
   preview = { session, element, suggestion };
   try {
     document.body.appendChild(element);
     updateGhostPosition();
-    session.owner.addEventListener("scroll", updateGhostPosition);
+    if (!preview) return false;
+    session.snapshot.owner.addEventListener("scroll", updateGhostPosition);
     return markVisible(session);
   } catch (error) {
     removeGhost();
@@ -45,56 +47,19 @@ export function showGhost(session, suggestion) {
 export function acceptGhost() {
   const active = preview;
   if (!active || active.session.status !== "visible" || !isSessionValid(active.session)) return false;
-  const { owner, text, start, end, intent } = active.session;
-  if (intent.type === "cursor" && start !== end) return false;
-  // Consume before editing. Never read replacement text back from host-accessible DOM.
+  const capability = active.session.adapter.getCapabilities(active.session.snapshot.owner)[active.session.snapshot.intent.type === "selection" ? "replaceSelection" : "insertText"];
+  if (capability.status === "unsupported") return false;
+  // Consume before editing; the adapter revalidates the immutable target before writing.
   if (!finishSession(active.session, "accepted")) return false;
-  owner.value = text.slice(0, start) + active.suggestion + text.slice(end);
-  owner.selectionStart = owner.selectionEnd = start + active.suggestion.length;
-  owner.dispatchEvent(new Event("input", { bubbles: true }));
-  return true;
+  return active.session.adapter.apply(active.session.snapshot, active.suggestion);
 }
 
 function updateGhostPosition() {
   if (!preview) return;
-  const caret = getCaretCoordinates(preview.session.owner);
-  preview.element.style.left = caret.left + "px";
-  preview.element.style.top = caret.top + "px";
-}
-
-function getCaretCoordinates(el) {
-  const mirror = document.createElement("div");
-  const style = getComputedStyle(el);
-  const rect = el.getBoundingClientRect();
-
-  for (const prop of style) {
-    mirror.style[prop] = style[prop];
-  }
-
-  mirror.style.position = "absolute";
-  mirror.style.visibility = "hidden";
-  mirror.style.whiteSpace = "pre-wrap";
-  mirror.style.wordWrap = "break-word";
-  mirror.style.overflow = "hidden";
-  mirror.style.left = rect.left + window.scrollX + "px";
-  mirror.style.top = rect.top + window.scrollY + "px";
-  mirror.style.width = rect.width + "px";
-  mirror.style.height = rect.height + "px";
-
-  mirror.textContent = el.value.slice(0, el.selectionStart ?? el.value.length);
-
-  const marker = document.createElement("span");
-  marker.textContent = "\u200b";
-  mirror.appendChild(marker);
-
-  document.body.appendChild(mirror);
-  const markerRect = marker.getBoundingClientRect();
-  document.body.removeChild(mirror);
-
-  return {
-    left: markerRect.left + window.scrollX,
-    top: markerRect.top + window.scrollY,
-  };
+  const caret = preview.session.adapter.getCaretRect(preview.session.snapshot);
+  if (!caret) { removeGhost(); return; }
+  preview.element.style.left = (caret.left + window.scrollX) + "px";
+  preview.element.style.top = (caret.top + window.scrollY) + "px";
 }
 
 function handleKeydown(event) {
@@ -103,7 +68,7 @@ function handleKeydown(event) {
   if (event.key !== "Tab" && event.key !== "Escape") return;
   const session = preview?.session;
   if (!session || session.status !== "visible" || !isSessionValid(session) ||
-      event.target !== session.owner) return;
+      resolveEditorOwner(event.target) !== session.snapshot.owner) return;
   if (event.key === "Tab" && acceptGhost()) event.preventDefault();
   if (event.key === "Escape") finishSession(session, "dismissed");
 }
@@ -114,10 +79,17 @@ export function initSuggestionUI() {
     if (preview?.session === session) clearPreview();
   });
   document.addEventListener("keydown", handleKeydown);
+  const hideRichPreview = () => {
+    if (preview?.session.adapter.kind === "contenteditable") removeGhost();
+  };
+  document.addEventListener("scroll", hideRichPreview, true);
+  window.addEventListener("resize", hideRichPreview);
   const cleanup = () => {
     if (dispose !== cleanup) return;
     removeGhost();
     document.removeEventListener("keydown", handleKeydown);
+    document.removeEventListener("scroll", hideRichPreview, true);
+    window.removeEventListener("resize", hideRichPreview);
     unsubscribe();
     dispose = null;
   };

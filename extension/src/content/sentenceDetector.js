@@ -1,13 +1,18 @@
+import { resolveEditorAdapter } from "./editors/index.js";
 import { MAX_PAYLOAD_CHARS } from "../shared/suggestionRequest.js";
 
-// P0.1.1 supports textareas only. Caret-relative context is a later milestone.
+// Native context retains its existing behavior; contenteditable context is caret-relative.
 export function handleTextIntent(el) {
-  if (el?.tagName !== "TEXTAREA") return null;
-  if (el.selectionStart !== el.selectionEnd) {
+  const adapter = resolveEditorAdapter(el);
+  el = adapter?.resolveOwner(el);
+  const target = adapter?.readSelection(el);
+  if (!target) return null;
+  if (!target.collapsed) {
     const selection = getActiveSelection(el);
     return selection ? { type: "selection", payload: selection.text } : null;
   }
-  const sentence = extractLastSentence(el.value);
+  const text = adapter.readText(el);
+  const sentence = text ? extractLastSentence(text) : null;
   return sentence ? { type: "cursor", payload: sentence } : null;
 }
 
@@ -18,13 +23,10 @@ function extractLastSentence(text) {
 }
 
 export function getActiveSelection(el) {
-  if (el?.tagName !== "TEXTAREA") return null;
-  const start = el.selectionStart;
-  const end = el.selectionEnd;
-  if (!Number.isInteger(start) || !Number.isInteger(end) || start < 0 ||
-      end > el.value.length || start >= end) return null;
-  const text = el.value.slice(start, end);
+  const adapter = resolveEditorAdapter(el);
+  const selection = adapter?.readSelection(adapter.resolveOwner(el));
+  if (!selection || selection.collapsed) return null;
+  const text = selection.text;
   if (text.length > MAX_PAYLOAD_CHARS || text.trim().split(/\s+/).length < 5) return null;
-  // Keep the exact selected text; trimming must not disguise an oversized target.
   return { text };
 }
