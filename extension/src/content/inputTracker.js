@@ -1,41 +1,30 @@
-// Purpose:
-// Tracks real-time typing behavior.
-
-// Stores:
-
-// Last keystroke timestamp
-
-// Active editable element
-
-// Cursor position
-
-// Current text snapshot
-
-// Why this matters:
-
-// You can’t do sentence-level AI without understanding where the user is typing.
-
 import { handleTextIntent } from "./sentenceDetector.js";
-import { removeGhost } from "./suggestionUI.js";
-import {state} from "./contentScript.js";
-
+import { isEligibleTextarea } from "./suggestionSession.js";
 
 export function attachInputTracker(el, onSentenceDetected) {
+  if (el.tagName !== "TEXTAREA") return;
   let typingTimer = null;
-
-  el.addEventListener("input", () => {
-    if (document.activeElement !== el) return;
-
-    state.isUserTyping = true;
-    removeGhost();
+  const cancelTimer = () => {
     clearTimeout(typingTimer);
+    typingTimer = null;
+  };
+  el.addEventListener("focusout", cancelTimer);
+  el.addEventListener("compositionstart", cancelTimer);
+  const onInput = (event) => {
+    cancelTimer();
+    if (event.isComposing || !isEligibleTextarea(el)) return;
     typingTimer = setTimeout(() => {
-      state.isUserTyping = false;
-      if (state.isRenderingGhost) return;
+      typingTimer = null;
+      if (!isEligibleTextarea(el)) return;
       const intent = handleTextIntent(el);
-      if (intent) {
-        onSentenceDetected(intent, el);
-      }
+      if (intent) onSentenceDetected(intent, el);
     }, 700);
-  });
+  };
+  el.addEventListener("input", onInput);
+  return () => {
+    cancelTimer();
+    el.removeEventListener("input", onInput);
+    el.removeEventListener("focusout", cancelTimer);
+    el.removeEventListener("compositionstart", cancelTimer);
+  };
 }

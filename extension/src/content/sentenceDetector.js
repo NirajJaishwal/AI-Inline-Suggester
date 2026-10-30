@@ -1,99 +1,30 @@
-// Purpose:
-// Decides when a sentence is ready for AI.
+import { MAX_PAYLOAD_CHARS } from "../shared/suggestionRequest.js";
 
-// Logic:
-
-// Sentence-ending punctuation
-
-// Cursor at end of sentence
-
-// User idle (debounced)
-
-// Minimum length threshold
-
-// This is the brainstem of your extension.
-
+// P0.1.1 supports textareas only. Caret-relative context is a later milestone.
 export function handleTextIntent(el) {
-  const selection = getActiveSelection(el);
-  if (selection) {
-    return {
-      type: "selection",
-      payload: selection.text,
-      range: selection.range
-    };
+  if (el?.tagName !== "TEXTAREA") return null;
+  if (el.selectionStart !== el.selectionEnd) {
+    const selection = getActiveSelection(el);
+    return selection ? { type: "selection", payload: selection.text } : null;
   }
-    const text = getText(el);
-    if (!text) return null;
-
-    const sentence = extractLastSentence(text);
-    if (!sentence) return null;
-
-    return {
-      type: "cursor",
-      payload: sentence
-    };
-}
-
-function getText(el) {
-    if (el.tagName === "TEXTAREA" || el.tagName === "INPUT") {
-        return el.value;
-    }
-
-    // contenteeditable
-    return el.innerText || el.textContent || "";
-
+  const sentence = extractLastSentence(el.value);
+  return sentence ? { type: "cursor", payload: sentence } : null;
 }
 
 function extractLastSentence(text) {
-  const sentences = text
-    .split(/(?<=[.!?])\s+/)
-    .map(s => s.trim())
-    .filter(s => s.length >= 5);
-
+  const sentences = text.split(/(?<=[.!?])\s+/)
+    .map(s => s.trim()).filter(s => s.length >= 5);
   return sentences.length ? sentences[sentences.length - 1] : null;
 }
 
-// export function getActiveSelection() {
-//   const selection = window.getSelection();
-//   if (!selection || selection.rangeCount === 0) return null;
-//   if (selection.isCollapsed) return null;
-
-//   const text = selection.toString().trim();
-//   if (text.split(/\s+/).length < 5) return null;
-
-//   return {text, range: selection.getRangeAt(0) };
-// }
-
 export function getActiveSelection(el) {
-  // TEXTAREA / INPUT selection
-  if (el && (el.tagName === "TEXTAREA" || el.tagName === "INPUT")) {
-    const start = el.selectionStart;
-    const end = el.selectionEnd;
-
-    if (start == null || end == null || start === end) return null;
-
-    const text = el.value.slice(start, end).trim();
-    if (text.split(/\s+/).length < 5) return null;
-
-    return {
-      text,
-      range: null, // textarea has no DOM range
-      source: "textarea"
-    };
-  }
-
-  // CONTENTEDITABLE selection
-  const selection = window.getSelection();
-  if (!selection || selection.rangeCount === 0) return null;
-  if (selection.isCollapsed) return null;
-
-  const text = selection.toString().trim();
-  if (text.split(/\s+/).length < 5) return null;
-
-  return {
-    text,
-    range: selection.getRangeAt(0),
-    source: "contenteditable"
-  };
+  if (el?.tagName !== "TEXTAREA") return null;
+  const start = el.selectionStart;
+  const end = el.selectionEnd;
+  if (!Number.isInteger(start) || !Number.isInteger(end) || start < 0 ||
+      end > el.value.length || start >= end) return null;
+  const text = el.value.slice(start, end);
+  if (text.length > MAX_PAYLOAD_CHARS || text.trim().split(/\s+/).length < 5) return null;
+  // Keep the exact selected text; trimming must not disguise an oversized target.
+  return { text };
 }
-

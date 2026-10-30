@@ -1,223 +1,126 @@
-// Purpose:
-// Render AI suggestions inline.
+import { isSessionValid, markVisible, finishSession, onSessionEnd } from "./suggestionSession.js";
 
-// Features:
+// One preview record; its session is the only source of editor/target ownership.
+let preview = null;
+let dispose = null;
 
-// Ghost text overlay
+export function hasGhost() { return Boolean(preview); }
 
-// Accept (Tab)
-
-// Dismiss (Esc)
-
-// Undo support
-
-// UX rule:
-
-// Helpful, not intrusive.
-
-// Dummy implementation for now
-import { state } from "./contentScript";
-import { handleTextIntent as handleTextIntent2 } from "./sentenceDetector.js";
-import { handleSentence as handleSentence2 } from "./contentScript.js";
-
-export function getDummySuggestion(intent) {
-    if (intent.type === "selection") {
-        return "Improve Clarity and tone of the selected text.";
-    }
-
-    if (intent.type === "cursor") {
-        return " Continue writing this though naturally.";
-    }
-    return " This sounds good - let me refine it.";
+function clearPreview() {
+  if (!preview) return;
+  preview.session.owner.removeEventListener("scroll", updateGhostPosition);
+  preview.element.remove();
+  preview = null;
 }
 
-// Ghost element creator
-let ghostEl = null;
 export function removeGhost() {
-    if (ghostEl) {
-        ghostEl.remove();
-        ghostEl = null;
-    }
+  if (preview) finishSession(preview.session);
+  clearPreview();
 }
 
-// render ghost for contenteditable
-export function showGhostforContentEditable(_el, suggestion) {
+export function showGhost(session, suggestion) {
+  if (!dispose || typeof suggestion !== "string" || !suggestion ||
+      session?.status !== "pending" || !isSessionValid(session)) return false;
+  removeGhost();
+  const element = document.createElement("div");
+  element.textContent = suggestion;
+  element.className = "inline-ai-ghost";
+  element.setAttribute("aria-hidden", "true");
+  Object.assign(element.style, {
+    position: "absolute", opacity: "0.4", pointerEvents: "none",
+    font: getComputedStyle(session.owner).font, whiteSpace: "pre", zIndex: "2147483647",
+  });
+  preview = { session, element, suggestion };
+  try {
+    document.body.appendChild(element);
+    updateGhostPosition();
+    session.owner.addEventListener("scroll", updateGhostPosition);
+    return markVisible(session);
+  } catch (error) {
     removeGhost();
-
-    const selection = window.getSelection();
-    if (!selection || selection.rangeCount === 0) return;
-
-    const range = selection.getRangeAt(0).cloneRange();
-    range.collapse(true);
-
-    ghostEl = document.createElement("span");
-    ghostEl.textContent = suggestion;
-    ghostEl.className = "inline-ai-ghost";
-    ghostEl.style.opacity = "0.4";
-    ghostEl.style.pointerEvents = "none";
-    ghostEl.style.whiteSpace = "pre";
-
-    try {
-        range.insertNode(ghostEl);
-    } catch (e) {
-        console.error("[Inline-AI] Failed to insert ghost:", e);
-    }
+    throw error;
+  }
 }
 
-function getCaretCoordinates(el) {
-    const div = document.createElement("div");
-    const style = getComputedStyle(el);
-
-    for (const prop of style) {
-        div.style[prop] = style[prop];
-    }
-
-    div.style.position = "absolute";
-    div.style.visibility = "hidden";
-    div.style.whiteSpace = "pre-wrap";
-    div.style.wordWrap = "break-word";
-    
-    div.textContent = el.value.substring(0, el.selectionStart);
-
-    const span = document.createElement("span");
-    span.textContent = "\u200b";
-    div.appendChild(span);
-
-    document.body.appendChild(div);
-    const rect = span.getBoundingClientRect();
-    document.body.removeChild(div);
-
-    return rect;
-}
-
-let currentTextarea = null;
-// render ghost for textarea/input
-function showGhostforTextarea(el, suggestion) {
-    removeGhost();
-    currentTextarea = el;
-    ghostEl = document.createElement("div");
-    ghostEl.textContent = suggestion;
-    ghostEl.style.position = "absolute";
-
-    const caret = getCaretCoordinates(el);
-    ghostEl.style.left = caret.left + "px";
-    ghostEl.style.top = caret.top + "px";
-    ghostEl.style.opacity = "0.4";
-    ghostEl.style.pointerEvents = "none";
-    ghostEl.style.font = getComputedStyle(el).font;
-    ghostEl.style.whiteSpace = "pre";
-    ghostEl.style.zIndex = "9999";
-
-    document.body.appendChild(ghostEl);
-
-    el.removeEventListener("input", updateGhostPosition);
-    el.addEventListener("input", updateGhostPosition);
+export function acceptGhost() {
+  const active = preview;
+  if (!active || active.session.status !== "visible" || !isSessionValid(active.session)) return false;
+  const { owner, text, start, end, intent } = active.session;
+  if (intent.type === "cursor" && start !== end) return false;
+  // Consume before editing. Never read replacement text back from host-accessible DOM.
+  if (!finishSession(active.session, "accepted")) return false;
+  owner.value = text.slice(0, start) + active.suggestion + text.slice(end);
+  owner.selectionStart = owner.selectionEnd = start + active.suggestion.length;
+  owner.dispatchEvent(new Event("input", { bubbles: true }));
+  return true;
 }
 
 function updateGhostPosition() {
-    if (!ghostEl || !currentTextarea) return;
-    const caret = getCaretCoordinates(currentTextarea);
-    ghostEl.style.left = caret.left + "px";
-    ghostEl.style.top = caret.top + "px";
+  if (!preview) return;
+  const caret = getCaretCoordinates(preview.session.owner);
+  preview.element.style.left = caret.left + "px";
+  preview.element.style.top = caret.top + "px";
 }
 
-export function acceptGhost(el) {
-  if (!ghostEl) return;
-  const suggestion = ghostEl.textContent;
-  removeGhost();
+function getCaretCoordinates(el) {
+  const mirror = document.createElement("div");
+  const style = getComputedStyle(el);
+  const rect = el.getBoundingClientRect();
 
-  if (el.tagName === "TEXTAREA" || el.tagName === "INPUT") {
-    const start = el.selectionStart ?? el.value.length;
-    const end = el.selectionEnd ?? el.value.length;
-
-    el.value =
-      el.value.slice(0, start) +
-      suggestion +
-      el.value.slice(end);
-
-    el.selectionStart = el.selectionEnd = start + suggestion.length;
-  } else {
-    const selection = window.getSelection();
-    if (!selection || selection.rangeCount === 0) return;
-
-    const range = selection.getRangeAt(0);
-    range.deleteContents();
-    range.insertNode(document.createTextNode(suggestion));
-    range.collapse(false);
-    selection.removeAllRanges();
-    selection.addRange(range);
+  for (const prop of style) {
+    mirror.style[prop] = style[prop];
   }
 
-  el.dispatchEvent(new Event("input", { bubbles: true }));
+  mirror.style.position = "absolute";
+  mirror.style.visibility = "hidden";
+  mirror.style.whiteSpace = "pre-wrap";
+  mirror.style.wordWrap = "break-word";
+  mirror.style.overflow = "hidden";
+  mirror.style.left = rect.left + window.scrollX + "px";
+  mirror.style.top = rect.top + window.scrollY + "px";
+  mirror.style.width = rect.width + "px";
+  mirror.style.height = rect.height + "px";
+
+  mirror.textContent = el.value.slice(0, el.selectionStart ?? el.value.length);
+
+  const marker = document.createElement("span");
+  marker.textContent = "\u200b";
+  mirror.appendChild(marker);
+
+  document.body.appendChild(mirror);
+  const markerRect = marker.getBoundingClientRect();
+  document.body.removeChild(mirror);
+
+  return {
+    left: markerRect.left + window.scrollX,
+    top: markerRect.top + window.scrollY,
+  };
 }
 
-// Remove ghost on selection change
-// document.addEventListener("selectionchange", () => {
-//   removeGhost();
-// });
-
-document.addEventListener("selectionchange", () => {
-  const el = document.activeElement;
-  if (!el) return;
-
-  if (state.isUserTyping || state.isRenderingGhost) return;
-
-  const intent = handleTextIntent2(el);
-  if (intent && intent.type === "selection") {
-    handleSentence2(intent, el);
-  }
-});
-
-// Add Tab key listener to accept suggestions 
-document.addEventListener("keydown", (e) => {
-    if (e.key === "Tab" && ghostEl) {
-    e.preventDefault();
-    const el = document.activeElement;
-    acceptGhost(el);
-    }
-}, true);
-
-// Main exported function
-export function showGhost(el, suggestion) {
-    // const suggestion = getDummySuggestion(sentence);
-
-    if (el.tagName === "TEXTAREA" || el.tagName === "INPUT") {
-        showGhostforTextarea(el, suggestion);
-    } else {
-        showGhostforContentEditable(el, suggestion);
-    }
+function handleKeydown(event) {
+  if (event.defaultPrevented || event.isComposing || event.keyCode === 229 ||
+      event.shiftKey || event.ctrlKey || event.altKey || event.metaKey) return;
+  if (event.key !== "Tab" && event.key !== "Escape") return;
+  const session = preview?.session;
+  if (!session || session.status !== "visible" || !isSessionValid(session) ||
+      event.target !== session.owner) return;
+  if (event.key === "Tab" && acceptGhost()) event.preventDefault();
+  if (event.key === "Escape") finishSession(session, "dismissed");
 }
 
-// ghost replacement for selection
-export function showGhostForSelection(range, text) {
+export function initSuggestionUI() {
+  if (dispose) return dispose;
+  const unsubscribe = onSessionEnd(session => {
+    if (preview?.session === session) clearPreview();
+  });
+  document.addEventListener("keydown", handleKeydown);
+  const cleanup = () => {
+    if (dispose !== cleanup) return;
     removeGhost();
-
-    ghostEl.document.createElement("span");
-    ghostEl.textContent = getDummySuggestion(text);
-    ghostEl.className = "inline-ai-ghost";
-    ghostEl.style.opacity = "0.4";
-    ghostEl.style.pointerEvents = "none";
-
-    range.deleteContents();
-    range.insertNode(ghostEl);
+    document.removeEventListener("keydown", handleKeydown);
+    unsubscribe();
+    dispose = null;
+  };
+  dispose = cleanup;
+  return cleanup;
 }
-
-// ghost replacement for range
-export function showGhostForRange(range, suggestion) {
-  removeGhost();
-  if (!range) return;
-
-  const ghost = document.createElement("span");
-  ghost.textContent = suggestion;
-  ghost.className = "inline-ai-ghost";
-  ghost.style.opacity = "0.4";
-  ghost.style.pointerEvents = "none";
-  ghost.style.whiteSpace = "pre";
-
-  const insertRange = range.cloneRange();
-  insertRange.collapse(false);
-  insertRange.insertNode(ghost);
-
-  ghostEl = ghost;
-}
-

@@ -1,86 +1,82 @@
-// Purpose:
-// Bootstraps everything on page load.
-
-// Responsibilities:
-
-// Initialize DOM observers
-
-// Attach input tracking
-
-// Coordinate sentence detection + UI
-
-// Think of it as the orchestrator.
+// P0.1.1: only native textareas may own suggestions.
 import { initObserver } from "./observer.js";
-import { removeGhost } from "./suggestionUI.js";
-import { showGhost } from "./suggestionUI.js";
-import { showGhostForRange } from "./suggestionUI.js";
-import { getDummySuggestion } from "./suggestionUI.js";
+import { handleTextIntent } from "./sentenceDetector.js";
+import { showGhost, initSuggestionUI } from "./suggestionUI.js";
+import { beginSession, getCurrentSession, isEligibleTextarea, isSessionValid, invalidateSession, initSuggestionSessions } from "./suggestionSession.js";
+import { getDummySuggestion, normalizeSuggestionRequest, SUGGESTION_MESSAGE } from "../shared/suggestionRequest.js";
 
-export const state = {
-  isUserTyping: false,
-  lastIntentKey: "",
-  isRenderingGhost: false
-};
-
-// Debounce and deduplicate renders
-// function handleSentence(intent, el) {
-//   if (state.isUserTyping || state.isRenderingGhost) return;
-//   const now = Date.now();
-
-//   if (now - lastRenderTime < 300) return;
-
-//   const intentKey = intent.type + "::" + intent.payload.slice(0,200);
-//   if (intentKey === state.lastIntentKey) return;
-//   state.isRenderingGhost = true;
-//   state.lastIntentKey = intentKey;
-//   // lastRenderTime = now;
-
-//   removeGhost();
-//   if (intent.type === "selection") {
-//     const suggestion = getDummySuggestion(intent);
-//     showGhostForRange(intent.range, suggestion);
-//     return;
-//   }
-
-//   if (intent.type === "cursor") {
-//     const suggestion = getDummySuggestion(intent);
-//     showGhost(el, suggestion);
-//   }
-//   // unlock After pain
-//   requestAnimationFrame(() => {
-//     state.isRenderingGhost = false;
-//   });
-// }
-
-export function handleSentence(intent, el) {
-  if (state.isUserTyping || state.isRenderingGhost) return;
-
-  // 🔥 DEDUPLICATION KEY
-  const intentKey = intent.type + "::" + intent.payload.slice(0, 200);
-
-  if (intentKey === state.lastIntentKey) return;
-
-  state.isRenderingGhost = true;
-  state.lastIntentKey = intentKey;
-  removeGhost();
-
-  const suggestion = getDummySuggestion(intent);
-
-  if (intent.type === "selection" && intent.range) {
-    showGhostForRange(intent.range, suggestion);
-  } else {
-    showGhost(el, suggestion);
-  }
-
-  requestAnimationFrame(() => {
-    state.isRenderingGhost = false;
+export async function handleSentence(intent, el) {
+  if (!intent || !isEligibleTextarea(el)) return;
+  const active = getCurrentSession();
+  if (isSessionValid(active) && active.owner === el &&
+      active.intent.type === intent.type && active.intent.payload === intent.payload) return;
+  const request = normalizeSuggestionRequest(intent, {
+    url: location.href,
+    host: location.host,
+    editableKind: "textarea",
   });
+  if (!request) return;
+  const session = beginSession(el, intent);
+  if (!session) return;
+  const suggestion = await requestSuggestion(request);
+  if (!isSessionValid(session)) return;
+  if (!suggestion) {
+    invalidateSession();
+    return;
+  }
+  try {
+    showGhost(session, suggestion);
+  } catch (error) {
+    invalidateSession();
+    console.error("[Inline-AI] Failed to render suggestion:", error);
+  }
 }
 
+async function requestSuggestion(request) {
+  if (!globalThis.chrome?.runtime?.sendMessage) return getDummySuggestion(request);
+  try {
+    const response = await chrome.runtime.sendMessage({ type: SUGGESTION_MESSAGE, request });
+    return response?.suggestion || getDummySuggestion(request);
+  } catch (error) {
+    console.warn("[Inline-AI] Falling back to dummy suggestion:", error);
+    return getDummySuggestion(request);
+  }
+}
 
-// Initialize everything
+function handleSelectionChange() {
+  const el = document.activeElement;
+  if (!isEligibleTextarea(el)) return;
+  const intent = handleTextIntent(el);
+  if (intent?.type === "selection") handleSentence(intent, el);
+}
+
+let dispose = null;
+export function initContentScript() {
+  if (dispose) return dispose;
+  const stopSessions = initSuggestionSessions();
+  const stopUI = initSuggestionUI();
+  let stopObserver;
+  try {
+    stopObserver = initObserver(handleSentence);
+  } catch (error) {
+    stopSessions(); stopUI();
+    throw error;
+  }
+  document.addEventListener("selectionchange", handleSelectionChange);
+  const cleanup = () => {
+    if (dispose !== cleanup) return;
+    document.removeEventListener("selectionchange", handleSelectionChange);
+    stopObserver();
+    stopSessions();
+    stopUI();
+    dispose = null;
+  };
+  dispose = cleanup;
+  return cleanup;
+}
+
 try {
-  initObserver(handleSentence);
+  initContentScript();
   console.log("[Inline-AI] Content script initialized");
 } catch (error) {
   console.error("[Inline-AI] Failed to initialize:", error);

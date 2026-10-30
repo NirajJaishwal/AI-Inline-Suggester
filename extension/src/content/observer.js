@@ -1,50 +1,36 @@
-// Purpose:
-// Detect dynamically created text inputs.
-
-// Handles:
-
-// <textarea>
-
-// contenteditable="true"
-
-// Uses:
-
-// MutationObserver
-
-// Why it exists:
-
-// Gmail, Outlook, Notion dynamically mount editors—this keeps you future-proof.
-
 import { attachInputTracker } from "./inputTracker.js";
 
-const trackedEditables = new WeakSet();
+// P0.1.1: discover native textareas only; retain teardown for every attached tracker.
 export function initObserver(onSentenceDetected) {
+  const tracked = new Map();
+  let stopped = false;
   let scheduled = false;
-    const observer = new MutationObserver(() => {
-      if (scheduled) return;
-      scheduled = true;
-
-      requestAnimationFrame(() => {
-        scanforEditableElements(onSentenceDetected);
-        scheduled = false;
-      });
+  let frame = null;
+  const scan = () => {
+    if (stopped) return;
+    for (const [el, cleanup] of tracked) {
+      if (!el.isConnected) { cleanup(); tracked.delete(el); }
+    }
+    document.querySelectorAll("textarea").forEach(el => {
+      if (!tracked.has(el)) tracked.set(el, attachInputTracker(el, onSentenceDetected));
     });
-
-    observer.observe(document.body, {
-        childList: true,
-        subtree: true,
+  };
+  const observer = new MutationObserver(() => {
+    if (scheduled || stopped) return;
+    scheduled = true;
+    frame = requestAnimationFrame(() => {
+      scheduled = false;
+      scan();
     });
-
-    scanforEditableElements(onSentenceDetected);
-}
-
-
-function scanforEditableElements(onSentenceDetected) {
-  document
-    .querySelectorAll('textarea, [contenteditable="true"]')
-    .forEach((el) => {
-      if (trackedEditables.has(el)) return;
-      trackedEditables.add(el);
-      attachInputTracker(el, onSentenceDetected);
-    });
+  });
+  observer.observe(document.body, { childList: true, subtree: true });
+  scan();
+  return () => {
+    if (stopped) return;
+    stopped = true;
+    observer.disconnect();
+    if (frame !== null) cancelAnimationFrame(frame);
+    tracked.forEach(cleanup => cleanup());
+    tracked.clear();
+  };
 }

@@ -4,7 +4,7 @@
   "version": "0.1.0",
 
   "background": {
-    "service_worker": "src/background/serviceWorker.js",
+    "service_worker": "dist/serviceWorker.js",
     "type": "module"
   },
 
@@ -15,5 +15,6 @@
     }
   ],
 
-  "permissions": ["activeTab"]
+  "permissions": ["activeTab"],
+  "host_permissions": []
 }
